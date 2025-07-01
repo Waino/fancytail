@@ -1,0 +1,14 @@
+#!/bin/bash
+set -eux
+
+# Alt 1: Lint using ruff
+ruff check
+
+# Alt 2: Reformat using black
+# black --skip-string-normalization
+
+# Unit tests
+python -m pytest -m "not slow"
+
+# Type checking
+mypy fancytail
