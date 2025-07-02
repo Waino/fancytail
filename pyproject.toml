@@ -30,7 +30,7 @@ Documentation = "https://fancytail.readthedocs.io"
 Source = "https://github.com/waino/fancytail"
 
 [project.scripts]
-fancytail = "fancytail:main"
+fancytail = "fancytail.fancytail:main"
 
 [tool.pytest.ini_options]
 addopts = "-v --cov=fancytail --cov-report html --ignore-glob docs/**"
