@@ -13,6 +13,7 @@ from rich.table import Table
 from typing import Optional, TextIO, Tuple, List
 
 ERROR_RE = re.compile(r"\b(error|fail|exception)\b", re.IGNORECASE)
+COMPACT_FILE_NAME_LENGTH = 20
 
 
 class WatchedFile(BaseModel):
@@ -69,7 +70,7 @@ class WatchedFile(BaseModel):
             table.add_row(f"[bold cyan]==> {self.path.name} <==[/bold cyan]")
             prefix = ""
         else:
-            prefix = f"[[bold cyan]{self.path.name[-10:]}[/bold cyan]] "
+            prefix = f"[[bold cyan]{self.path.name[-COMPACT_FILE_NAME_LENGTH:]}[/bold cyan]] "
 
         while len(self.last_errors) > error_lines:
             self.last_errors.popleft()
