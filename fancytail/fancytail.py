@@ -1,7 +1,8 @@
 """fancytail."""
 import click
-import sys
+import os
 import re
+import sys
 from collections import deque, OrderedDict
 from datetime import datetime
 from inotify_simple import INotify, flags   # type: ignore
@@ -12,7 +13,7 @@ from rich.live import Live
 from rich.table import Table
 from typing import Optional, TextIO, Tuple, List
 
-ERROR_RE = re.compile(r"\b(error|fail|exception)\b", re.IGNORECASE)
+ERROR_RE = re.compile(r"(error|fail|exception)", re.IGNORECASE)
 COMPACT_FILE_NAME_LENGTH = 20
 
 
@@ -40,10 +41,17 @@ class WatchedFile(BaseModel):
         For each removed line, check if it is an error to be kept in the error buffer.
         """
         self.last_lines.append(line)
-        usable_size = self.total_size - len(self.last_errors)
-        use_header = self.total_size > 2
-        if use_header:
-            usable_size -= 1
+        self._truncate()
+
+    def _truncate(self) -> None:
+        def _usable_size():
+            usable_size = self.total_size - len(self.last_errors)
+            use_header = self.total_size > 2
+            if use_header:
+                usable_size -= 1
+            return usable_size
+
+        usable_size = _usable_size()
         if usable_size < 1:
             return
         while len(self.last_lines) > usable_size:
@@ -52,6 +60,7 @@ class WatchedFile(BaseModel):
                 self.last_errors.append(popped)
                 while len(self.last_errors) > self.max_errors:
                     self.last_errors.popleft()
+                usable_size = _usable_size()
 
     def _get_size(self) -> Tuple[bool, int, int]:
         size_left = self.total_size
@@ -72,10 +81,7 @@ class WatchedFile(BaseModel):
         else:
             prefix = f"[[bold cyan]{self.path.name[-COMPACT_FILE_NAME_LENGTH:]}[/bold cyan]] "
 
-        while len(self.last_errors) > error_lines:
-            self.last_errors.popleft()
-        while len(self.last_lines) > normal_lines:
-            self.last_lines.popleft()
+        self._truncate()
 
         for line in self.last_errors:
             line = line.rstrip("\n")
@@ -130,6 +136,10 @@ class DirectoryWatcher:
         wfile = self.watched_files[path]
         wfile.last_modified = datetime.now()
         assert wfile.fobj is not None
+        truncated = detect_truncation(wfile.fobj)
+        if truncated:
+            wfile.update_line("[yellow](file truncated)[/yellow]")
+            wfile.fobj.seek(0)
         # read to the new end of the file
         while True:
             line = wfile.fobj.readline()
@@ -137,29 +147,40 @@ class DirectoryWatcher:
                 break
             wfile.update_line(line)
 
-    def divide_screen(self, screen_size: int) -> List[int]:
-        """Divide the screen among the watched files"""
-        n_files = len(self.watched_files)
-        if n_files == 0:
-            return []
-        if n_files > screen_size:
-            return [1] * screen_size
-        lines_per_file = screen_size // n_files
-        extra_lines = screen_size % n_files
-        sizes = [lines_per_file] * n_files
-        for i in range(extra_lines):
-            sizes[i] += 1
-        return sizes
 
-    def filter_most_recent(self, n: int) -> List[Path]:
-        """Return the n most recently modified files, but do not change their ordering"""
-        candidate_files = {key: val for key, val in self.watched_files.items() if val.last_modified is not None}
-        if n >= len(candidate_files):
-            return list(candidate_files.keys())
-        sorted_files = sorted(candidate_files.items(), key=lambda x: x[1].last_modified, reverse=True)  # type: ignore
-        selected = {x[0] for x in sorted_files[:n]}
-        filtered = [x for x in candidate_files.keys() if x in selected]
-        return filtered
+def divide_screen(n_files: int, screen_size: int) -> List[int]:
+    """Divide the screen among the watched files"""
+    if n_files == 0:
+        return []
+    if n_files > screen_size:
+        return [1] * screen_size
+    lines_per_file = screen_size // n_files
+    extra_lines = screen_size % n_files
+    sizes = [lines_per_file] * n_files
+    for i in range(extra_lines):
+        sizes[i] += 1
+    return sizes
+
+
+def filter_most_recent(watched_files: OrderedDict[Path, WatchedFile], n: int) -> List[Path]:
+    """Return the n most recently modified files, but do not change their ordering"""
+    candidate_files = {key: val for key, val in watched_files.items() if val.last_modified is not None}
+    if n >= len(candidate_files):
+        return list(candidate_files.keys())
+    sorted_files = sorted(candidate_files.items(), key=lambda x: x[1].last_modified, reverse=True)  # type: ignore
+    selected = {x[0] for x in sorted_files[:n]}
+    filtered = [x for x in candidate_files.keys() if x in selected]
+    return filtered
+
+
+def detect_truncation(fobj: TextIO) -> bool:
+    """
+    Detect if the file has been truncated without moving the file pointer.
+    Caveat: doesn't work if the file contents change but the length remains the same.
+    """
+    offset = os.lseek(fobj.fileno(), 0, os.SEEK_CUR)
+    file_size = os.stat(fobj.fileno()).st_size
+    return offset > file_size
 
 
 @click.command()
@@ -174,10 +195,10 @@ def main(path: Path, max_errors: int = 1, n: int = 3) -> None:
             watcher.watch()
             table = Table.grid()
             table.add_column()
-            sizes = watcher.divide_screen(console.height)
+            sizes = divide_screen(n_files=len(watcher.watched_files), screen_size=console.height)
             if len(sizes) == 0:
                 table.add_row("[grey30](No files to watch)[/grey30]")
-            for (path, size) in zip(watcher.filter_most_recent(len(sizes)), sizes):
+            for (path, size) in zip(filter_most_recent(watcher.watched_files, len(sizes)), sizes):
                 wfile = watcher.watched_files[path]
                 wfile.set_size(size, max_errors)
                 wfile.render(table)
