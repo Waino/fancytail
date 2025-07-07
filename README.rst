@@ -2,45 +2,18 @@
 fancytail
 =========
 
-.. image:: https://img.shields.io/pypi/v/fancytail.svg
-        :target: https://pypi.python.org/pypi/fancytail
-
-.. image:: https://readthedocs.org/projects/fancytail/badge/?version=latest
-        :target: https://fancytail.readthedocs.io/en/latest/?version=latest
-        :alt: Documentation Status
-
-
-
-
 * Free software: MIT License
-* Documentation: https://fancytail.readthedocs.io.
 
 Installation
 ------------
 
   .. code-block:: bash
 
-    pip install fancytail
+    pip install https://github.com/Waino/fancytail.git
 
 Features
 --------
 
-* TODO
-
-Configuration
--------------
-
-* TODO
-
-Citing
-------
-
-If you use fancytail in a scientific publication, please cite
-
-  .. code-block:: bibtex
-
-    TODO
-
-ArXiv preprint available online at
-
-    TODO
+Fancytail is a small tool for watching multiple log files in a directory.
+It is similar in spirit to running `tail -f` on multiple files,
+but provides a more modern experience.
