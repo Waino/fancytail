@@ -63,7 +63,7 @@ def test_watched_file_set_size():
     wf.update_line("line5\n")
     # one header, two lines
     assert list(wf.last_lines) == ["line4\n", "line5\n"]
-    wf.set_size(total_size=5, max_errors=2)
+    wf.set_size(total_size=5, max_errors=2, width=80)
     assert list(wf.last_lines) == ["line4\n", "line5\n"]
     wf.update_line("line6\n")
     # one header, three lines 1+3 < 5
@@ -78,7 +78,7 @@ def test_watched_file_set_size():
     wf.update_line("error occurred\n")
     wf.update_line("line9\n")
     wf.update_line("line10\n")
-    wf.set_size(total_size=3, max_errors=2)
+    wf.set_size(total_size=3, max_errors=2, width=80)
     # render to trigger truncation
     wf.render(MagicMock())
     # one header, one error, one line
@@ -98,7 +98,7 @@ def test_watched_file_no_truncate_if_hidden():
     wf.update_line("line5\n")
     # one header, 4 lines
     assert list(wf.last_lines) == ["line2\n", "line3\n", "line4\n", "line5\n"]
-    wf.set_size(total_size=0, max_errors=2)
+    wf.set_size(total_size=0, max_errors=2, width=80)
     wf.update_line("line6\n")
     wf.update_line("line7\n")
     # no truncation
@@ -106,25 +106,25 @@ def test_watched_file_no_truncate_if_hidden():
 
 
 @pytest.mark.parametrize(
-    "filename, input, expected, total_size, max_errors",
+    "filename, input, expected, total_size, max_errors, width",
     [
         (
             "test.log",
             ["line1", "line2", "line3"],
             ["[bold cyan]==> test.log <==[/bold cyan]", "line1", "line2", "line3"],
-            5, 1,
+            5, 1, 80,
         ),
         (
             "foobar.log",
             ["line1", "line2", "line3"],
             ["[bold cyan]==> foobar.log <==[/bold cyan]", "line2", "line3"],
-            3, 1,
+            3, 1, 80,
         ),
         (
             "quux.log",
             ["line1", "line2", "line3"],
             ["[[bold cyan]quux.log[/bold cyan]] line2", "[[bold cyan]quux.log[/bold cyan]] line3"],
-            2, 1,
+            2, 1, 80,
         ),
         (
             "looooooooongfilename.log",
@@ -133,19 +133,25 @@ def test_watched_file_no_truncate_if_hidden():
                 "[[bold cyan]oooooongfilename.log[/bold cyan]] line2",
                 "[[bold cyan]oooooongfilename.log[/bold cyan]] line3",
             ],
-            2, 1,
+            2, 1, 80,
         ),
         (
             "errorlast.log",
             ["line1", "line2", "line3", "error occurred"],
             ["[bold cyan]==> errorlast.log <==[/bold cyan]", "line1", "line2", "line3", "[red]error occurred[/red]"],
-            5, 1,
+            5, 1, 80,
         ),
         (
             "errorfirst.log",
             ["error occurred", "line2", "line3", "line4"],
             ["[bold cyan]==> errorfirst.log <==[/bold cyan]", "[red]error occurred[/red]", "line3", "line4"],
-            4, 1,
+            4, 1, 80,
+        ),
+        (
+            "truncate_long_line.log",
+            ["line1", "line2", "line3", "line4", "123456789ABCDEFGH", "line6"],
+            ["[bold cyan]==> truncate_long_line.log <==[/bold cyan]", "line2", "line3", "line4", "123456789ABC", "line6"],
+            6, 1, 12,
         ),
     ]
 )
@@ -155,9 +161,10 @@ def test_watched_file_render(
     expected: List[str],
     total_size: int,
     max_errors: int,
+    width: int,
 ):
     """Test WatchedFile.render method"""
-    wf = WatchedFile(path=Path(filename), total_size=total_size, max_errors=max_errors)
+    wf = WatchedFile(path=Path(filename), total_size=total_size, max_errors=max_errors, width=width)
     for line in input:
         wf.update_line(line)
     table = MagicMock()

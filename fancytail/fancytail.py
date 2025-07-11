@@ -29,10 +29,14 @@ class WatchedFile(BaseModel):
     fobj: Optional[TextIO] = None
     total_size: int = 10
     max_errors: int = 1
+    width: int = 80
+    needs_render: bool = True
 
-    def set_size(self, total_size: int, max_errors: int) -> None:
+    def set_size(self, total_size: int, max_errors: int, width: int) -> None:
         self.total_size = total_size
         self.max_errors = max_errors
+        self.width = width
+        self.needs_render = True
 
     def update_line(self, line: str) -> None:
         """
@@ -42,6 +46,7 @@ class WatchedFile(BaseModel):
         """
         self.last_lines.append(line)
         self._truncate()
+        self.needs_render = True
 
     def _truncate(self) -> None:
         def _usable_size():
@@ -78,20 +83,24 @@ class WatchedFile(BaseModel):
         if use_header:
             table.add_row(f"[bold cyan]==> {self.path.name} <==[/bold cyan]")
             prefix = ""
+            usable_width = self.width
         else:
-            prefix = f"[[bold cyan]{self.path.name[-COMPACT_FILE_NAME_LENGTH:]}[/bold cyan]] "
+            truncated = self.path.name[-COMPACT_FILE_NAME_LENGTH:]
+            prefix = f"[[bold cyan]{truncated}[/bold cyan]] "
+            usable_width = self.width - len(truncated) - 3
 
         self._truncate()
 
         for line in self.last_errors:
-            line = line.rstrip("\n")
+            line = line.rstrip("\n")[:usable_width]
             table.add_row(f"{prefix}[red]{line}[/red]")
         for line in self.last_lines:
-            line = line.rstrip("\n")
+            line = line.rstrip("\n")[:usable_width]
             if ERROR_RE.search(line):
                 table.add_row(f"{prefix}[red]{line}[/red]")
             else:
                 table.add_row(f"{prefix}{line}")
+        self.needs_render = False
 
 
 class DirectoryWatcher:
@@ -187,7 +196,11 @@ def detect_truncation(fobj: TextIO) -> bool:
 @click.argument("path", type=Path, default=".")
 @click.option("--max-errors", type=int, default=1, help="Maximum number of errors to keep in view", show_default=True)
 @click.option("-n", type=int, default=3, help="Number of original lines to show", show_default=True)
-def main(path: Path, max_errors: int = 1, n: int = 3) -> None:
+@click.option(
+    "--max-height", type=int, default=-1,
+    help="Maximum height of the table, to limit flickering on crappy terminals"
+)
+def main(path: Path, max_errors: int = 1, n: int = 3, max_height: int = -1) -> None:
     watcher = DirectoryWatcher(path, n=n)
     console = Console()
     with Live(auto_refresh=False) as live:
@@ -195,14 +208,18 @@ def main(path: Path, max_errors: int = 1, n: int = 3) -> None:
             watcher.watch()
             table = Table.grid()
             table.add_column()
-            sizes = divide_screen(n_files=len(watcher.watched_files), screen_size=console.height)
+            height = max_height if max_height > 0 else console.height
+            sizes = divide_screen(n_files=len(watcher.watched_files), screen_size=height)
             if len(sizes) == 0:
                 table.add_row("[grey30](No files to watch)[/grey30]")
+            needs_render = False
             for (path, size) in zip(filter_most_recent(watcher.watched_files, len(sizes)), sizes):
                 wfile = watcher.watched_files[path]
-                wfile.set_size(size, max_errors)
+                needs_render = needs_render or wfile.needs_render
+                wfile.set_size(total_size=size, max_errors=max_errors, width=console.width)
                 wfile.render(table)
-            live.update(table, refresh=True)
+            if needs_render:
+                live.update(table, refresh=True)
 
 
 if __name__ == "__main__":
